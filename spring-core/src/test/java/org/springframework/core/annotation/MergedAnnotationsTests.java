@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,7 @@ import org.springframework.util.ReflectionUtils;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.entry;
 
@@ -72,6 +73,26 @@ import static org.assertj.core.api.Assertions.entry;
  * @see MergedAnnotationClassLoaderTests
  */
 class MergedAnnotationsTests {
+
+	@Test
+	void fromPreconditions() {
+		SearchStrategy strategy = SearchStrategy.DIRECT;
+		RepeatableContainers containers = RepeatableContainers.standardRepeatables();
+
+		assertThatIllegalArgumentException()
+			.isThrownBy(() -> MergedAnnotations.from(getClass(), strategy, null, AnnotationFilter.PLAIN))
+			.withMessage("RepeatableContainers must not be null");
+		assertThatIllegalArgumentException()
+			.isThrownBy(() -> MergedAnnotations.from(getClass(), strategy, containers, null))
+			.withMessage("AnnotationFilter must not be null");
+
+		assertThatIllegalArgumentException()
+			.isThrownBy(() -> MergedAnnotations.from(getClass(), new Annotation[0], null, AnnotationFilter.PLAIN))
+			.withMessage("RepeatableContainers must not be null");
+		assertThatIllegalArgumentException()
+			.isThrownBy(() -> MergedAnnotations.from(getClass(), new Annotation[0], containers, null))
+			.withMessage("AnnotationFilter must not be null");
+	}
 
 	@Test
 	void streamWhenFromNonAnnotatedClass() {
@@ -1253,6 +1274,7 @@ class MergedAnnotationsTests {
 	}
 
 	@Test
+	@SuppressWarnings("deprecation")
 	void getRepeatableDeclaredOnClassWithAttributeAliases() {
 		assertThat(MergedAnnotations.from(HierarchyClass.class).stream(
 				TestConfiguration.class)).isEmpty();
@@ -1380,14 +1402,22 @@ class MergedAnnotationsTests {
 	@Test
 	void synthesizeShouldNotSynthesizeNonsynthesizableAnnotations() throws Exception {
 		Method method = getClass().getDeclaredMethod("getId");
+
 		Id id = method.getAnnotation(Id.class);
 		assertThat(id).isNotNull();
-
 		Id synthesizedId = MergedAnnotation.from(id).synthesize();
 		assertThat(id).isEqualTo(synthesizedId);
-		// It doesn't make sense to synthesize {@code @Id} since it declares zero attributes.
+		// It doesn't make sense to synthesize @Id since it declares zero attributes.
 		assertThat(synthesizedId).isNotInstanceOf(SynthesizedAnnotation.class);
 		assertThat(id).isSameAs(synthesizedId);
+
+		GeneratedValue generatedValue = method.getAnnotation(GeneratedValue.class);
+		assertThat(generatedValue).isNotNull();
+		GeneratedValue synthesizedGeneratedValue = MergedAnnotation.from(generatedValue).synthesize();
+		assertThat(generatedValue).isEqualTo(synthesizedGeneratedValue);
+		// It doesn't make sense to synthesize @GeneratedValue since it declares zero attributes with aliases.
+		assertThat(synthesizedGeneratedValue).isNotInstanceOf(SynthesizedAnnotation.class);
+		assertThat(generatedValue).isSameAs(synthesizedGeneratedValue);
 	}
 
 	/**
@@ -2987,7 +3017,16 @@ class MergedAnnotationsTests {
 	@interface Id {
 	}
 
+	/**
+	 * Mimics javax.persistence.GeneratedValue
+	 */
+	@Retention(RUNTIME)
+	@interface GeneratedValue {
+		String strategy();
+	}
+
 	@Id
+	@GeneratedValue(strategy = "AUTO")
 	private Long getId() {
 		return 42L;
 	}
